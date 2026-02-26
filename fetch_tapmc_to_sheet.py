@@ -186,4 +186,188 @@ def parse_query_combos(raw: str):
         seg = part.strip()
         if not seg:
             continue
-        pieces = 
+        pieces = [p.strip() for p in seg.split(":")]
+        if len(pieces) != 3:
+            raise ValueError(f"QUERY_COMBOS 格式錯誤: {seg}，正確格式為 category:fv_code:market")
+        combos.append((pieces[0], pieces[1], pieces[2]))
+    if not combos:
+        raise ValueError("QUERY_COMBOS 不能為空")
+    return combos
+
+
+def roc_date_from_gregorian(dt) -> str:
+    roc_year = dt.year - 1911
+    return f"{roc_year:03d}/{dt.month:02d}/{dt.day:02d}"
+
+
+def parse_roc_date(text: str):
+    m = re.fullmatch(r"(\d{2,3})/(\d{1,2})/(\d{1,2})", text.strip())
+    if not m:
+        raise ValueError("QUERY_DATE_ROC 格式錯誤，請用 YYY/MM/DD，例如 115/02/24")
+    roc_year, month, day = map(int, m.groups())
+    return datetime(roc_year + 1911, month, day).date()
+
+
+def get_client(service_account_json_path: str, service_account_json_content: str):
+    if service_account_json_content:
+        # 雲端執行時可直接用 secret 內容建立憑證
+        info = json.loads(service_account_json_content)
+        return gspread.service_account_from_dict(info)
+    return gspread.service_account(filename=service_account_json_path)
+
+
+def load_item_codes(sheet, worksheet_name: str, item_column: int):
+    ws = sheet.worksheet(worksheet_name)
+    values = ws.col_values(item_column)
+
+    codes = []
+    for i, v in enumerate(values):
+        code = normalize_text(v).upper()
+        if not code:
+            continue
+        if i == 0 and code in {"品名代號", "ITEM", "CODE", "品項", "ITEMCODE"}:
+            continue
+        codes.append(code)
+    return codes
+
+
+def append_price_rows(sheet, worksheet_name: str, rows):
+    ws = sheet.worksheet(worksheet_name)
+    if rows:
+        ws.append_rows(rows, value_input_option="USER_ENTERED")
+
+
+def main():
+    load_dotenv()
+
+    source_url = os.getenv("SOURCE_URL", "https://www.tapmc.com.tw/Pages/Trans/Price1")
+    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    service_account_json_content = (os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT") or "").strip()
+    sheet_id = os.getenv("GOOGLE_SHEET_ID")
+    timezone_name = os.getenv("TIMEZONE", "Asia/Taipei")
+
+    item_worksheet_name = os.getenv("ITEM_WORKSHEET_NAME", "item")
+    price_worksheet_name = os.getenv("PRICE_WORKSHEET_NAME", "價格")
+    item_column = int(os.getenv("ITEM_COLUMN", "1"))
+
+    query_combos_raw = os.getenv(
+        "QUERY_COMBOS",
+        "1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2",
+    )
+    query_date_roc_override = (os.getenv("QUERY_DATE_ROC") or "").strip()
+    max_backtrack_days = int(os.getenv("MAX_BACKTRACK_DAYS", "10"))
+
+    missing = []
+    if not service_account_json and not service_account_json_content:
+        missing.append("GOOGLE_SERVICE_ACCOUNT_JSON 或 GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT")
+    if not sheet_id:
+        missing.append("GOOGLE_SHEET_ID")
+    if missing:
+        raise ValueError(f"缺少必要環境變數: {', '.join(missing)}")
+
+    tz = pytz.timezone(timezone_name)
+    now = datetime.now(tz)
+
+    if query_date_roc_override:
+        start_date = parse_roc_date(query_date_roc_override)
+        target_date_str = start_date.strftime("%Y-%m-%d")
+    else:
+        start_date = now.date()
+        target_date_str = now.strftime("%Y-%m-%d")
+
+    gc = get_client(service_account_json, service_account_json_content)
+    sh = gc.open_by_key(sheet_id)
+
+    target_codes = load_item_codes(sh, item_worksheet_name, item_column)
+    if not target_codes:
+        raise ValueError(f"{item_worksheet_name} 分頁第 {item_column} 欄沒有可用代號")
+
+    combos = parse_query_combos(query_combos_raw)
+    last_html = ""
+    rows_to_append = []
+    missing_codes = []
+    used_query_date_roc = None
+    backtracked_days = 0
+
+    for days_back in range(max_backtrack_days + 1):
+        query_date = start_date - timedelta(days=days_back)
+        query_date_roc = roc_date_from_gregorian(query_date)
+        all_records = {}
+
+        for category, fv_code, market in combos:
+            html = fetch_query_result_html(
+                source_url,
+                date_roc=query_date_roc,
+                category=category,
+                fv_code=fv_code,
+                market=market,
+            )
+            last_html = html
+            records = extract_records_from_html(html)
+            for code, rec in records.items():
+                if code not in all_records:
+                    all_records[code] = rec
+
+        if not all_records:
+            continue
+
+        candidate_rows = []
+        candidate_missing_codes = []
+        for code in target_codes:
+            rec = all_records.get(code)
+            if not rec:
+                candidate_missing_codes.append(code)
+                continue
+
+            candidate_rows.append(
+                [
+                    target_date_str,
+                    rec["code"],
+                    rec["name"],
+                    rec["variety"],
+                    rec["high"],
+                    rec["mid"],
+                    rec["low"],
+                ]
+            )
+
+        if candidate_rows:
+            rows_to_append = candidate_rows
+            missing_codes = candidate_missing_codes
+            used_query_date_roc = query_date_roc
+            backtracked_days = days_back
+            break
+
+    if not rows_to_append:
+        debug_path = os.path.abspath("debug_tapmc_response.html")
+        with open(debug_path, "w", encoding="utf-8") as f:
+            f.write(last_html)
+        raise ValueError(
+            f"在最近 {max_backtrack_days} 天內都找不到可用資料 (已儲存 {debug_path})"
+        )
+
+    append_price_rows(sh, price_worksheet_name, rows_to_append)
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "date": target_date_str,
+                "used_query_date_roc": used_query_date_roc,
+                "backtracked_days": backtracked_days,
+                "item_codes": len(target_codes),
+                "appended": len(rows_to_append),
+                "missing_codes": missing_codes,
+                "price_worksheet": price_worksheet_name,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
