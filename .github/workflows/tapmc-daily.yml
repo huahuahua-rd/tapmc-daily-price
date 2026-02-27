@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       delay_seconds:
-        description: "Seconds before auto-dispatching the next run"
+        description: "Seconds before auto-dispatching the next run."
         required: false
         default: "300"
   schedule:
