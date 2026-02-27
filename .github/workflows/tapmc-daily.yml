@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tapmc-daily.yml"
 
 permissions:
   contents: read
@@ -23,6 +28,12 @@ jobs:
       QUERY_DATE_ROC: ""
       MAX_BACKTRACK_DAYS: "10"
     steps:
+      - name: Debug trigger context
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "repository=${{ github.repository }}"
+          echo "ref=${{ github.ref }}"
+          date -u
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
