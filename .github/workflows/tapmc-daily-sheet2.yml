@@ -1,0 +1,61 @@
+name: TAPMC Schedule V2 - Sheet2
+
+on:
+  workflow_dispatch:
+    inputs:
+      delay_seconds:
+        description: "Seconds before auto-dispatching the next run."
+        required: false
+        default: "300"
+  schedule:
+    - cron: "0 1 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tapmc-daily-sheet2.yml"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_URL: https://www.tapmc.com.tw/Pages/Trans/Price1
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID_2 }}
+      GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
+      ITEM_WORKSHEET_NAME: item
+      PRICE_WORKSHEET_NAME: 價格
+      ITEM_COLUMN: "1"
+      TIMEZONE: Asia/Taipei
+      QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
+      QUERY_DATE_ROC: ""
+      MAX_BACKTRACK_DAYS: "10"
+    steps:
+      - name: Debug trigger context
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "repository=${{ github.repository }}"
+          echo "ref=${{ github.ref }}"
+          date -u
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python fetch_tapmc_to_sheet.py
+      - name: Auto-dispatch next run (fallback when schedule is unstable)
+        if: ${{ false }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DELAY_SECONDS: ${{ github.event.inputs.delay_seconds || '300' }}
+        run: |
+          echo "sleep ${DELAY_SECONDS}s before dispatching next run"
+          sleep "${DELAY_SECONDS}"
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/tapmc-daily-sheet2.yml/dispatches" \
+            -d '{"ref":"main"}'
