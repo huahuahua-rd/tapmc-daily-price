@@ -2,8 +2,9 @@ name: TAPMC Daily Price
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
+
 
 
 jobs:
