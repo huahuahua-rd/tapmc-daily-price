@@ -15,6 +15,10 @@ on:
         description: "Backfill end date (YYYY-MM-DD). Required when backfill_start is set."
         required: false
         default: ""
+      backtrack_days:
+        description: "How many days to backtrack when target date has no data."
+        required: false
+        default: "10"
   schedule:
     - cron: "0 1 * * *"
   push:
@@ -67,6 +71,7 @@ jobs:
 
           start_raw = "${{ github.event.inputs.backfill_start }}"
           end_raw = "${{ github.event.inputs.backfill_end }}"
+          backtrack_days = "${{ github.event.inputs.backtrack_days || '10' }}"
 
           if not end_raw:
               raise SystemExit("backfill_end is required when backfill_start is set")
@@ -85,7 +90,7 @@ jobs:
           while cur <= end:
               env = os.environ.copy()
               env["QUERY_DATE_ROC"] = to_roc(cur)
-              env["MAX_BACKTRACK_DAYS"] = "0"
+              env["MAX_BACKTRACK_DAYS"] = backtrack_days
 
               p = subprocess.run(
                   [sys.executable, "fetch_tapmc_to_sheet.py"],
