@@ -4,7 +4,7 @@
 1. 到北農單日交易行情頁面送出「當日查詢」
 2. 擷取表格欄位：`品名代號 / 品名 / 品種 / 上價 / 中價 / 下價`
 3. 讀取 Google Sheet 的 `item` 分頁（預設 A 欄）代號清單
-4. 僅把命中的代號資料 append 到 `價格` 分頁，格式為 `日期 / 品名代號 / 品名 / 品種 / 上價 / 中價 / 下價`
+4. 依 `品名代號 + 品名` 自動建立分頁，並把命中的代號資料 append 到對應分頁，格式為 `日期 / 品名代號 / 品名 / 品種 / 上價 / 中價 / 下價`
 5. 若當天休市無資料，會自動往前找最近有資料的日期（可設定回溯天數）
 
 ## 1) 安裝
@@ -33,7 +33,6 @@ cp .env.example .env
 - `GOOGLE_SERVICE_ACCOUNT_JSON`: JSON 金鑰絕對路徑
 - `GOOGLE_SHEET_ID`: 目標試算表 ID
 - `ITEM_WORKSHEET_NAME`: 代號清單分頁（預設 `item`）
-- `PRICE_WORKSHEET_NAME`: 寫入分頁（預設 `價格`）
 - `ITEM_COLUMN`: `item` 分頁哪一欄放代號（預設 `1` = A 欄）
 - `QUERY_COMBOS`: 查詢組合，格式 `category:fv_code:market`
 - `QUERY_DATE_ROC`: 指定查詢日期（民國格式 `YYY/MM/DD`，例如 `115/02/24`），留空表示查今天

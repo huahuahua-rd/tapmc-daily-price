@@ -12,6 +12,7 @@ import pytz
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from gspread.exceptions import WorksheetNotFound
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -246,10 +247,39 @@ def load_item_codes(sheet, worksheet_name: str, item_column: int):
     return codes
 
 
-def append_price_rows(sheet, worksheet_name: str, rows):
-    ws = sheet.worksheet(worksheet_name)
-    if rows:
+def sanitize_worksheet_title(text: str) -> str:
+    cleaned = re.sub(r'[\[\]:*?/\\]', " ", text or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        cleaned = "未命名"
+    return cleaned[:100]
+
+
+def worksheet_title_for_record(record) -> str:
+    return sanitize_worksheet_title(f'{record["code"]} {record["name"]}')
+
+
+def get_or_create_item_worksheet(sheet, title: str):
+    try:
+        return sheet.worksheet(title)
+    except WorksheetNotFound:
+        ws = sheet.add_worksheet(title=title, rows=2000, cols=7)
+        ws.append_row(
+            ["日期", "品名代號", "品名", "品種", "上價", "中價", "下價"],
+            value_input_option="USER_ENTERED",
+        )
+        return ws
+
+
+def append_rows_by_worksheet(sheet, rows_by_worksheet):
+    updated = {}
+    for title, rows in rows_by_worksheet.items():
+        if not rows:
+            continue
+        ws = get_or_create_item_worksheet(sheet, title)
         ws.append_rows(rows, value_input_option="USER_ENTERED")
+        updated[title] = len(rows)
+    return updated
 
 
 def main():
@@ -262,7 +292,6 @@ def main():
     timezone_name = os.getenv("TIMEZONE", "Asia/Taipei")
 
     item_worksheet_name = os.getenv("ITEM_WORKSHEET_NAME", "item")
-    price_worksheet_name = os.getenv("PRICE_WORKSHEET_NAME", "價格")
     item_column = int(os.getenv("ITEM_COLUMN", "1"))
 
     query_combos_raw = os.getenv(
@@ -299,7 +328,7 @@ def main():
 
     combos = parse_query_combos(query_combos_raw)
     last_html = ""
-    rows_to_append = []
+    rows_to_append_by_sheet = {}
     missing_codes = []
     used_query_date_roc = None
     backtracked_days = 0
@@ -326,7 +355,7 @@ def main():
         if not all_records:
             continue
 
-        candidate_rows = []
+        candidate_rows_by_sheet = {}
         candidate_missing_codes = []
         for code in target_codes:
             rec = all_records.get(code)
@@ -334,26 +363,26 @@ def main():
                 candidate_missing_codes.append(code)
                 continue
 
-            candidate_rows.append(
-                [
-                    target_date_str,
-                    rec["code"],
-                    rec["name"],
-                    rec["variety"],
-                    rec["high"],
-                    rec["mid"],
-                    rec["low"],
-                ]
-            )
+            sheet_title = worksheet_title_for_record(rec)
+            row = [
+                target_date_str,
+                rec["code"],
+                rec["name"],
+                rec["variety"],
+                rec["high"],
+                rec["mid"],
+                rec["low"],
+            ]
+            candidate_rows_by_sheet.setdefault(sheet_title, []).append(row)
 
-        if candidate_rows:
-            rows_to_append = candidate_rows
+        if candidate_rows_by_sheet:
+            rows_to_append_by_sheet = candidate_rows_by_sheet
             missing_codes = candidate_missing_codes
             used_query_date_roc = query_date_roc
             backtracked_days = days_back
             break
 
-    if not rows_to_append:
+    if not rows_to_append_by_sheet:
         debug_path = os.path.abspath("debug_tapmc_response.html")
         with open(debug_path, "w", encoding="utf-8") as f:
             f.write(last_html)
@@ -361,7 +390,8 @@ def main():
             f"在最近 {max_backtrack_days} 天內都找不到可用資料 (已儲存 {debug_path})"
         )
 
-    append_price_rows(sh, price_worksheet_name, rows_to_append)
+    updated_worksheets = append_rows_by_worksheet(sh, rows_to_append_by_sheet)
+    appended_rows = sum(updated_worksheets.values())
 
     print(
         json.dumps(
@@ -371,9 +401,9 @@ def main():
                 "used_query_date_roc": used_query_date_roc,
                 "backtracked_days": backtracked_days,
                 "item_codes": len(target_codes),
-                "appended": len(rows_to_append),
+                "appended": appended_rows,
                 "missing_codes": missing_codes,
-                "price_worksheet": price_worksheet_name,
+                "updated_worksheets": updated_worksheets,
             },
             ensure_ascii=False,
         )
