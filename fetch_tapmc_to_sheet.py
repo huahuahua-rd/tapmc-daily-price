@@ -12,6 +12,8 @@ import pytz
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 REQUIRED_FIELDS = {
     "code": ["品名代號", "代號"],
@@ -55,7 +57,20 @@ def fetch_query_result_html(url: str, date_roc: str, category: str, fv_code: str
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
+    retry = Retry(
+        total=4,
+        connect=4,
+        read=4,
+        backoff_factor=1.0,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET", "POST"]),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+
     with requests.Session() as session:
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
         resp = session.get(url, headers=headers, timeout=30)
         resp.raise_for_status()
         if not resp.encoding:
