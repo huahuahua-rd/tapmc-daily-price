@@ -1,11 +1,12 @@
-name: TAPMC Daily Price
+name: TAPMC Schedule V2
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch:
 
-
+permissions:
+  contents: read
 
 jobs:
   run:
