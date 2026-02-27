@@ -2,6 +2,11 @@ name: TAPMC Schedule V2
 
 on:
   workflow_dispatch:
+    inputs:
+      delay_seconds:
+        description: "Seconds before auto-dispatching the next run"
+        required: false
+        default: "300"
   schedule:
     - cron: "2-59/5 * * * *"
   push:
@@ -12,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   run:
@@ -25,18 +31,4 @@ jobs:
       ITEM_COLUMN: "1"
       TIMEZONE: Asia/Taipei
       QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
-      QUERY_DATE_ROC: ""
-      MAX_BACKTRACK_DAYS: "10"
-    steps:
-      - name: Debug trigger context
-        run: |
-          echo "event_name=${{ github.event_name }}"
-          echo "repository=${{ github.repository }}"
-          echo "ref=${{ github.ref }}"
-          date -u
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: python fetch_tapmc_to_sheet.py
+      QUERY_DATE_
