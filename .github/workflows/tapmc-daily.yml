@@ -8,7 +8,7 @@ on:
         required: false
         default: "300"
   schedule:
-    - cron: "2-59/5 * * * *"
+    - cron: "0 1 * * *"
   push:
     branches:
       - main
@@ -47,7 +47,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python fetch_tapmc_to_sheet.py
       - name: Auto-dispatch next run (fallback when schedule is unstable)
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push') }}
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DELAY_SECONDS: ${{ github.event.inputs.delay_seconds || '300' }}
