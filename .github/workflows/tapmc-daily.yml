@@ -7,6 +7,14 @@ on:
         description: "Seconds before auto-dispatching the next run."
         required: false
         default: "300"
+      backfill_start:
+        description: "Backfill start date (YYYY-MM-DD). Leave blank for normal daily run."
+        required: false
+        default: ""
+      backfill_end:
+        description: "Backfill end date (YYYY-MM-DD). Required when backfill_start is set."
+        required: false
+        default: ""
   schedule:
     - cron: "0 1 * * *"
   push:
@@ -45,7 +53,59 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python fetch_tapmc_to_sheet.py
+      - name: Run daily sync
+        if: ${{ github.event.inputs.backfill_start == '' }}
+        run: python fetch_tapmc_to_sheet.py
+      - name: Run backfill range
+        if: ${{ github.event.inputs.backfill_start != '' }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          from datetime import date, timedelta
+
+          start_raw = "${{ github.event.inputs.backfill_start }}"
+          end_raw = "${{ github.event.inputs.backfill_end }}"
+
+          if not end_raw:
+              raise SystemExit("backfill_end is required when backfill_start is set")
+
+          start = date.fromisoformat(start_raw)
+          end = date.fromisoformat(end_raw)
+          if start > end:
+              raise SystemExit(f"Invalid range: {start} > {end}")
+
+          def to_roc(d):
+              return f"{d.year - 1911:03d}/{d.month:02d}/{d.day:02d}"
+
+          cur = start
+          ok = 0
+          fail = 0
+          while cur <= end:
+              env = os.environ.copy()
+              env["QUERY_DATE_ROC"] = to_roc(cur)
+              env["MAX_BACKTRACK_DAYS"] = "0"
+
+              p = subprocess.run(
+                  [sys.executable, "fetch_tapmc_to_sheet.py"],
+                  env=env,
+                  text=True,
+                  capture_output=True,
+              )
+              if p.returncode == 0:
+                  ok += 1
+                  print(f"OK {cur}")
+              else:
+                  fail += 1
+                  err = (p.stderr or p.stdout).strip().splitlines()
+                  print(f"FAIL {cur} {err[-1] if err else 'unknown-error'}")
+              cur += timedelta(days=1)
+
+          print(f"SUMMARY ok={ok} fail={fail} range={start}..{end}")
+          if fail > 0:
+              raise SystemExit(f"Backfill completed with failures: {fail}")
+          PY
       - name: Auto-dispatch next run (fallback when schedule is unstable)
         if: ${{ false }}
         env:
