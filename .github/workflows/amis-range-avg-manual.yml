@@ -26,6 +26,7 @@ jobs:
           GOOGLE_SHEET_ID_RANGE_AVG: ${{ secrets.GOOGLE_SHEET_ID_RANGE_AVG }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
+          FORCE_IPV4: "true"
         run: |
           if [ -z "$GOOGLE_SHEET_ID_RANGE_AVG" ] && [ -z "$GOOGLE_SHEET_ID" ]; then
             echo "Missing secret GOOGLE_SHEET_ID_RANGE_AVG or GOOGLE_SHEET_ID";

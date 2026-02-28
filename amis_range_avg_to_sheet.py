@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Tuple
 import gspread
 import pandas as pd
 import requests
+import socket
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -28,6 +29,7 @@ MARKET_NO = os.getenv("MARKET_NO", "109")
 MARKET_NAME = os.getenv("MARKET_NAME", "北市一")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Taipei")
 SSL_VERIFY = os.getenv("SSL_VERIFY", "true").lower() != "false"
+FORCE_IPV4 = os.getenv("FORCE_IPV4", "true").lower() == "true"
 
 DATE_INPUT_SOURCE = os.getenv("DATE_INPUT_SOURCE", "sheet").strip().lower()
 DATE_START = os.getenv("DATE_START", "").strip()
@@ -105,6 +107,17 @@ def parse_date_loose(s: str, today: date) -> date:
 
 
 def build_session() -> requests.Session:
+    if FORCE_IPV4:
+        # Force IPv4 to avoid occasional IPv6 routing failures on GitHub runners.
+        original_getaddrinfo = socket.getaddrinfo
+
+        def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+            if host and host.endswith("amis.afa.gov.tw"):
+                family = socket.AF_INET
+            return original_getaddrinfo(host, port, family, type, proto, flags)
+
+        socket.getaddrinfo = _getaddrinfo
+
     retry = Retry(
         total=4,
         connect=4,
