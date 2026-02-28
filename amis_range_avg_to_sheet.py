@@ -30,6 +30,7 @@ MARKET_NAME = os.getenv("MARKET_NAME", "北市一")
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Taipei")
 SSL_VERIFY = os.getenv("SSL_VERIFY", "true").lower() != "false"
 FORCE_IPV4 = os.getenv("FORCE_IPV4", "true").lower() == "true"
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 
 DATE_INPUT_SOURCE = os.getenv("DATE_INPUT_SOURCE", "sheet").strip().lower()
 DATE_START = os.getenv("DATE_START", "").strip()
@@ -140,7 +141,7 @@ def hidden_value(html: str, name: str) -> str:
 
 def fetch_selector_products(selector_url: str) -> Dict[str, str]:
     session = build_session()
-    resp = session.get(selector_url, timeout=30, verify=SSL_VERIFY)
+    resp = session.get(selector_url, timeout=REQUEST_TIMEOUT, verify=SSL_VERIFY)
     resp.raise_for_status()
     html = resp.text
     out = {}
@@ -183,7 +184,7 @@ def fetch_excel_rows(
     product_labels: List[str],
 ) -> List[Tuple[str, str, float]]:
     session = build_session()
-    resp = session.get(url, timeout=30, verify=SSL_VERIFY)
+    resp = session.get(url, timeout=REQUEST_TIMEOUT, verify=SSL_VERIFY)
     resp.raise_for_status()
     html = resp.text
 
@@ -202,7 +203,7 @@ def fetch_excel_rows(
         "ctl00$contentPlaceHolder$hfldProductType": "",
         "ctl00$contentPlaceHolder$btnXls": "下載Excel",
     }
-    xls = session.post(url, data=payload, timeout=60, verify=SSL_VERIFY)
+    xls = session.post(url, data=payload, timeout=REQUEST_TIMEOUT, verify=SSL_VERIFY)
     xls.raise_for_status()
 
     df = pd.read_excel(io.BytesIO(xls.content), header=4)

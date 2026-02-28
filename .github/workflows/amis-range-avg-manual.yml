@@ -6,7 +6,7 @@ on:
 jobs:
   run:
     name: 計算上價平均並寫入試算表
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4
@@ -27,6 +27,7 @@ jobs:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
           FORCE_IPV4: "true"
+          REQUEST_TIMEOUT: "120"
         run: |
           if [ -z "$GOOGLE_SHEET_ID_RANGE_AVG" ] && [ -z "$GOOGLE_SHEET_ID" ]; then
             echo "Missing secret GOOGLE_SHEET_ID_RANGE_AVG or GOOGLE_SHEET_ID";
