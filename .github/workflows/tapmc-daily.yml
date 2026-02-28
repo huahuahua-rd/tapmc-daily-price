@@ -37,6 +37,7 @@ jobs:
     env:
       SOURCE_URL: https://www.tapmc.com.tw/Pages/Trans/Price1
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      GOOGLE_SHEET_ID_2: ${{ secrets.GOOGLE_SHEET_ID_2 }}
       GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
       ITEM_WORKSHEET_NAME: item
       PRICE_WORKSHEET_NAME: 價格
@@ -57,10 +58,19 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - name: Run daily sync
+      - name: Run daily sync (all sheets)
         if: ${{ github.event.inputs.backfill_start == '' }}
-        run: python fetch_tapmc_to_sheet.py
-      - name: Run backfill range
+        run: |
+          set -euo pipefail
+          SHEET_IDS=("${GOOGLE_SHEET_ID}")
+          if [ -n "${GOOGLE_SHEET_ID_2:-}" ]; then
+            SHEET_IDS+=("${GOOGLE_SHEET_ID_2}")
+          fi
+          for sid in "${SHEET_IDS[@]}"; do
+            echo "Sync sheet: ${sid}"
+            GOOGLE_SHEET_ID="${sid}" python fetch_tapmc_to_sheet.py
+          done
+      - name: Run backfill range (all sheets)
         if: ${{ github.event.inputs.backfill_start != '' }}
         run: |
           python - <<'PY'
@@ -72,6 +82,10 @@ jobs:
           start_raw = "${{ github.event.inputs.backfill_start }}"
           end_raw = "${{ github.event.inputs.backfill_end }}"
           backtrack_days = "${{ github.event.inputs.backtrack_days || '10' }}"
+          sheet_ids = [os.environ["GOOGLE_SHEET_ID"]]
+          second_sheet = os.environ.get("GOOGLE_SHEET_ID_2", "").strip()
+          if second_sheet:
+              sheet_ids.append(second_sheet)
 
           if not end_raw:
               raise SystemExit("backfill_end is required when backfill_start is set")
@@ -88,23 +102,25 @@ jobs:
           ok = 0
           fail = 0
           while cur <= end:
-              env = os.environ.copy()
-              env["QUERY_DATE_ROC"] = to_roc(cur)
-              env["MAX_BACKTRACK_DAYS"] = backtrack_days
+              for sheet_id in sheet_ids:
+                  env = os.environ.copy()
+                  env["GOOGLE_SHEET_ID"] = sheet_id
+                  env["QUERY_DATE_ROC"] = to_roc(cur)
+                  env["MAX_BACKTRACK_DAYS"] = backtrack_days
 
-              p = subprocess.run(
-                  [sys.executable, "fetch_tapmc_to_sheet.py"],
-                  env=env,
-                  text=True,
-                  capture_output=True,
-              )
-              if p.returncode == 0:
-                  ok += 1
-                  print(f"OK {cur}")
-              else:
-                  fail += 1
-                  err = (p.stderr or p.stdout).strip().splitlines()
-                  print(f"FAIL {cur} {err[-1] if err else 'unknown-error'}")
+                  p = subprocess.run(
+                      [sys.executable, "fetch_tapmc_to_sheet.py"],
+                      env=env,
+                      text=True,
+                      capture_output=True,
+                  )
+                  if p.returncode == 0:
+                      ok += 1
+                      print(f"OK {cur} sheet={sheet_id}")
+                  else:
+                      fail += 1
+                      err = (p.stderr or p.stdout).strip().splitlines()
+                      print(f"FAIL {cur} sheet={sheet_id} {err[-1] if err else 'unknown-error'}")
               cur += timedelta(days=1)
 
           print(f"SUMMARY ok={ok} fail={fail} range={start}..{end}")
