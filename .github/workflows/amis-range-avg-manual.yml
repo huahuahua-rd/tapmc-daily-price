@@ -7,7 +7,12 @@ jobs:
   run:
     name: 計算上價平均並寫入試算表
     runs-on: [self-hosted, macOS]
+    env:
+      RUNNER_TOOL_CACHE: /Users/hushiyu/actions-runner/_tool
     steps:
+      - name: 準備工具快取
+        run: |
+          mkdir -p /Users/hushiyu/actions-runner/_tool
       - name: 取得程式碼
         uses: actions/checkout@v4
 
@@ -34,4 +39,4 @@ jobs:
             exit 1;
           fi
           export GOOGLE_SHEET_ID="${GOOGLE_SHEET_ID_RANGE_AVG:-$GOOGLE_SHEET_ID}"
-          python amis_range_avg_to_s
+          python amis_range_avg_to_sheet.py
