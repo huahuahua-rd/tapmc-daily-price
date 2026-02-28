@@ -115,9 +115,13 @@ jobs:
                   ok += 1
                   print(f"OK {cur} sheet=primary")
               else:
-                  fail += 1
                   err = (p.stderr or p.stdout).strip().splitlines()
-                  print(f"FAIL {cur} sheet=primary {err[-1] if err else 'unknown-error'}")
+                  msg = err[-1] if err else "unknown-error"
+                  if "No usable data found within MAX_BACKTRACK_DAYS" in msg:
+                      print(f"SKIP {cur} sheet=primary no-data")
+                  else:
+                      fail += 1
+                      print(f"FAIL {cur} sheet=primary {msg}")
 
               if second_sheet:
                   secondary_env = os.environ.copy()
