@@ -414,5 +414,12 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        msg = str(exc).strip() or repr(exc)
+        print(
+            json.dumps(
+                {"ok": False, "error": msg, "error_type": exc.__class__.__name__},
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
         sys.exit(1)
