@@ -45,7 +45,7 @@ jobs:
       TIMEZONE: Asia/Taipei
       QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
       QUERY_DATE_ROC: ""
-      MAX_BACKTRACK_DAYS: "10"
+      MAX_BACKTRACK_DAYS: "0"
     steps:
       - name: Debug trigger context
         run: |
@@ -63,7 +63,18 @@ jobs:
         run: |
           set -euo pipefail
           echo "Sync primary sheet"
-          GOOGLE_SHEET_ID="${GOOGLE_SHEET_ID}" python fetch_tapmc_to_sheet.py
+          set +e
+          primary_out="$(GOOGLE_SHEET_ID="${GOOGLE_SHEET_ID}" python fetch_tapmc_to_sheet.py 2>&1)"
+          primary_rc=$?
+          set -e
+          echo "${primary_out}"
+          if [ "${primary_rc}" -ne 0 ]; then
+            if echo "${primary_out}" | rg -q "No usable data found within MAX_BACKTRACK_DAYS|找不到可用資料"; then
+              echo "::notice::Primary sheet has no data for today; skip append."
+            else
+              exit "${primary_rc}"
+            fi
+          fi
 
           if [ -n "${GOOGLE_SHEET_ID_2:-}" ]; then
             echo "Sync secondary sheet"
