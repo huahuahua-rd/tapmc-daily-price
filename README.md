@@ -69,7 +69,7 @@ crontab -e
 專案已包含 workflow：
 - [.github/workflows/tapmc-daily.yml](/Users/hushiyu/Documents/北農/.github/workflows/tapmc-daily.yml)
 
-執行時間是台灣時間每天 09:00（UTC `01:00`）。
+執行時間是台灣時間每週二、週六 09:00（UTC `01:00`）。
 
 在 GitHub Repo 設定這兩個 Secrets：
 - `GOOGLE_SHEET_ID`: 你的試算表 ID
@@ -79,7 +79,7 @@ crontab -e
 
 完成後：
 1. 把目前資料夾 push 到 GitHub repository
-2. 到 `Actions` 頁籤手動執行一次 `TAPMC Daily Price`（`Run workflow`）
+2. 到 `Actions` 頁籤手動執行一次 `每二六更新的品項價格`（`Run workflow`）
 3. 確認各品名分頁（`品名代號 品名`）有新增資料
 
 ## 7) AMIS 區間品項上價平均（蔬菜/水果）
