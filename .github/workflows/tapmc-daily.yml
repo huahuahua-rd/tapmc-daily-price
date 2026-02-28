@@ -37,7 +37,6 @@ jobs:
     env:
       SOURCE_URL: https://www.tapmc.com.tw/Pages/Trans/Price1
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-      GOOGLE_SHEET_ID_2: ${{ secrets.GOOGLE_SHEET_ID_2 }}
       GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
       ITEM_WORKSHEET_NAME: item
       PRICE_WORKSHEET_NAME: 價格
@@ -73,13 +72,6 @@ jobs:
               echo "::notice::Primary sheet has no data for today; skip append."
             else
               exit "${primary_rc}"
-            fi
-          fi
-
-          if [ -n "${GOOGLE_SHEET_ID_2:-}" ]; then
-            echo "Sync secondary sheet"
-            if ! GOOGLE_SHEET_ID="${GOOGLE_SHEET_ID_2}" python fetch_tapmc_to_sheet.py; then
-              echo "::warning::Secondary sheet sync failed. Check GOOGLE_SHEET_ID_2 and sharing permission for the service account."
             fi
           fi
       - name: Run backfill range (all sheets)
