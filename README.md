@@ -116,6 +116,9 @@ Workflow 名稱：`上價平均（區間）`
 2. 選擇 `上價平均（區間）`
 3. 點 `Run workflow`
 
+### 注意（需要自架 Runner）
+此流程使用自架 Runner（self-hosted），點 `Run workflow` 會在你的 Mac 上執行。
+
 需要的 Secrets：
 - `GOOGLE_SHEET_ID_RANGE_AVG`：區間試算表 ID（若未設定，會改用 `GOOGLE_SHEET_ID`）
 - `GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT`：Service Account JSON 內容（整段貼上）

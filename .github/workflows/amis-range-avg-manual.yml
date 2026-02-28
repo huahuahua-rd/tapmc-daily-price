@@ -6,7 +6,7 @@ on:
 jobs:
   run:
     name: 計算上價平均並寫入試算表
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS]
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4
@@ -34,4 +34,4 @@ jobs:
             exit 1;
           fi
           export GOOGLE_SHEET_ID="${GOOGLE_SHEET_ID_RANGE_AVG:-$GOOGLE_SHEET_ID}"
-          python amis_range_avg_to_sheet.py
+          python amis_range_avg_to_s
