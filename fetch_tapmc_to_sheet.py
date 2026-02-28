@@ -277,8 +277,31 @@ def append_rows_by_worksheet(sheet, rows_by_worksheet):
         if not rows:
             continue
         ws = get_or_create_item_worksheet(sheet, title)
-        ws.append_rows(rows, value_input_option="USER_ENTERED")
-        updated[title] = len(rows)
+
+        # De-duplicate by (date, code) against existing sheet rows and within this batch.
+        existing = set()
+        values = ws.get_all_values()
+        for r in values[1:]:
+            d = (r[0].strip() if len(r) > 0 else "")
+            c = (r[1].strip().upper() if len(r) > 1 else "")
+            if d and c:
+                existing.add((d, c))
+
+        deduped = []
+        for row in rows:
+            d = (str(row[0]).strip() if len(row) > 0 else "")
+            c = (str(row[1]).strip().upper() if len(row) > 1 else "")
+            if d and c and (d, c) in existing:
+                continue
+            if d and c:
+                existing.add((d, c))
+            deduped.append(row)
+
+        if not deduped:
+            continue
+
+        ws.append_rows(deduped, value_input_option="USER_ENTERED")
+        updated[title] = len(deduped)
     return updated
 
 
