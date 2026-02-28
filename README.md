@@ -61,4 +61,61 @@ crontab -e
 加入：
 
 ```cron
-0 9 * * * cd /Use
+0 9 * * * cd /Users/hushiyu/Documents/北農 && /Users/hushiyu/Documents/北農/.venv/bin/python /Users/hushiyu/Documents/北農/fetch_tapmc_to_sheet.py >> /Users/hushiyu/Documents/北農/cron.log 2>&1
+```
+
+## 6) 雲端版（GitHub Actions，不用開著 Mac）
+
+專案已包含 workflow：
+- [.github/workflows/tapmc-daily.yml](/Users/hushiyu/Documents/北農/.github/workflows/tapmc-daily.yml)
+
+執行時間是台灣時間每天 09:00（UTC `01:00`）。
+
+在 GitHub Repo 設定這兩個 Secrets：
+- `GOOGLE_SHEET_ID`: 你的試算表 ID
+- `GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT`: Service Account 整份 JSON 內容（整段貼上）
+
+設定路徑：`Repo -> Settings -> Secrets and variables -> Actions -> New repository secret`
+
+完成後：
+1. 把目前資料夾 push 到 GitHub repository
+2. 到 `Actions` 頁籤手動執行一次 `TAPMC Daily Price`（`Run workflow`）
+3. 確認各品名分頁（`品名代號 品名`）有新增資料
+
+## 7) AMIS 區間品項上價平均（蔬菜/水果）
+
+腳本：`amis_range_avg_to_sheet.py`
+
+### 需求
+- Google Sheet 內 `B1:B2` 放區間一（開始/結束），`C1:C2` 放區間二（開始/結束）
+- 市場：北市一
+- 品項：全品項（蔬菜 + 水果）
+
+### 執行
+
+```bash
+source .venv/bin/activate
+python amis_range_avg_to_sheet.py
+```
+
+### 輸出格式（預設寫入第一個分頁）
+- `A1:C1`：`區間 / 區間一開始 / 區間二開始`
+- `A2:C2`：`區間 / 區間一結束 / 區間二結束`
+- `A3:C3`：`品項 / 上價平均 / 上價平均`
+- `A4:C...`：各品項的區間上價平均（對應 B、C 欄）
+
+### 注意
+- 若要指定分頁，請在 `.env` 設定 `WORKSHEET_NAME`
+- 若要用環境變數日期而非 Sheet 內日期，請設定 `DATE_INPUT_SOURCE=env` 並填 `DATE_START`/`DATE_END`
+
+### GitHub 手動執行
+Workflow 名稱：`上價平均（區間）`
+
+執行方式：
+1. GitHub → `Actions`
+2. 選擇 `上價平均（區間）`
+3. 點 `Run workflow`
+
+需要的 Secrets：
+- `GOOGLE_SHEET_ID_RANGE_AVG`：區間試算表 ID
+- `GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT`：Service Account JSON 內容（整段貼上）

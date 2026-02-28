@@ -1,38 +1,14 @@
-name: TAPMC Schedule V2
+name: 每二六更新的品項價格
 
 on:
-  workflow_dispatch:
-    inputs:
-      delay_seconds:
-        description: "Seconds before auto-dispatching the next run."
-        required: false
-        default: "300"
-      backfill_start:
-        description: "Backfill start date (YYYY-MM-DD). Leave blank for normal daily run."
-        required: false
-        default: ""
-      backfill_end:
-        description: "Backfill end date (YYYY-MM-DD). Required when backfill_start is set."
-        required: false
-        default: ""
-      backtrack_days:
-        description: "How many days to backtrack when target date has no data."
-        required: false
-        default: "10"
   schedule:
-    - cron: "0 1 * * *"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/tapmc-daily.yml"
-
-permissions:
-  contents: read
-  actions: write
+    # UTC 01:00 = Asia/Taipei 09:00 (Tue, Sat)
+    - cron: "0 1 * * 2,6"
+  workflow_dispatch:
 
 jobs:
   run:
+    name: 更新品項價格
     runs-on: ubuntu-latest
     env:
       SOURCE_URL: https://www.tapmc.com.tw/Pages/Trans/Price1
@@ -44,121 +20,18 @@ jobs:
       TIMEZONE: Asia/Taipei
       QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
       QUERY_DATE_ROC: ""
-      MAX_BACKTRACK_DAYS: "9"
+      MAX_BACKTRACK_DAYS: "10"
     steps:
-      - name: Debug trigger context
-        run: |
-          echo "event_name=${{ github.event_name }}"
-          echo "repository=${{ github.repository }}"
-          echo "ref=${{ github.ref }}"
-          date -u
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: 取得程式碼
+        uses: actions/checkout@v4
+
+      - name: 安裝 Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - name: Run daily sync (all sheets)
-        if: ${{ github.event.inputs.backfill_start == '' }}
-        run: |
-          set -euo pipefail
-          echo "Sync primary sheet"
-          set +e
-          primary_out="$(GOOGLE_SHEET_ID="${GOOGLE_SHEET_ID}" python fetch_tapmc_to_sheet.py 2>&1)"
-          primary_rc=$?
-          set -e
-          echo "${primary_out}"
-          if [ "${primary_rc}" -ne 0 ]; then
-            if echo "${primary_out}" | rg -q "No usable data found within MAX_BACKTRACK_DAYS|找不到可用資料"; then
-              echo "::notice::Primary sheet has no data for today; skip append."
-            else
-              exit "${primary_rc}"
-            fi
-          fi
-      - name: Run backfill range (all sheets)
-        if: ${{ github.event.inputs.backfill_start != '' }}
-        run: |
-          python - <<'PY'
-          import os
-          import subprocess
-          import sys
-          from datetime import date, timedelta
 
-          start_raw = "${{ github.event.inputs.backfill_start }}"
-          end_raw = "${{ github.event.inputs.backfill_end }}"
-          backtrack_days = "${{ github.event.inputs.backtrack_days || '10' }}"
-          primary_sheet_id = os.environ["GOOGLE_SHEET_ID"]
-          second_sheet = os.environ.get("GOOGLE_SHEET_ID_2", "").strip()
+      - name: 安裝依賴
+        run: pip install -r requirements.txt
 
-          if not end_raw:
-              raise SystemExit("backfill_end is required when backfill_start is set")
-
-          start = date.fromisoformat(start_raw)
-          end = date.fromisoformat(end_raw)
-          if start > end:
-              raise SystemExit(f"Invalid range: {start} > {end}")
-
-          def to_roc(d):
-              return f"{d.year - 1911:03d}/{d.month:02d}/{d.day:02d}"
-
-          cur = start
-          ok = 0
-          fail = 0
-          while cur <= end:
-              primary_env = os.environ.copy()
-              primary_env["GOOGLE_SHEET_ID"] = primary_sheet_id
-              primary_env["QUERY_DATE_ROC"] = to_roc(cur)
-              primary_env["MAX_BACKTRACK_DAYS"] = backtrack_days
-              p = subprocess.run(
-                  [sys.executable, "fetch_tapmc_to_sheet.py"],
-                  env=primary_env,
-                  text=True,
-                  capture_output=True,
-              )
-              if p.returncode == 0:
-                  ok += 1
-                  print(f"OK {cur} sheet=primary")
-              else:
-                  err = (p.stderr or p.stdout).strip().splitlines()
-                  msg = err[-1] if err else "unknown-error"
-                  if "No usable data found within MAX_BACKTRACK_DAYS" in msg:
-                      print(f"SKIP {cur} sheet=primary no-data")
-                  else:
-                      fail += 1
-                      print(f"FAIL {cur} sheet=primary {msg}")
-
-              if second_sheet:
-                  secondary_env = os.environ.copy()
-                  secondary_env["GOOGLE_SHEET_ID"] = second_sheet
-                  secondary_env["QUERY_DATE_ROC"] = to_roc(cur)
-                  secondary_env["MAX_BACKTRACK_DAYS"] = backtrack_days
-                  p2 = subprocess.run(
-                      [sys.executable, "fetch_tapmc_to_sheet.py"],
-                      env=secondary_env,
-                      text=True,
-                      capture_output=True,
-                  )
-                  if p2.returncode == 0:
-                      ok += 1
-                      print(f"OK {cur} sheet=secondary")
-                  else:
-                      err2 = (p2.stderr or p2.stdout).strip().splitlines()
-                      print(f"WARN {cur} sheet=secondary {err2[-1] if err2 else 'unknown-error'}")
-              cur += timedelta(days=1)
-
-          print(f"SUMMARY ok={ok} fail={fail} range={start}..{end}")
-          if fail > 0:
-              raise SystemExit(f"Backfill completed with failures: {fail}")
-          PY
-      - name: Auto-dispatch next run (fallback when schedule is unstable)
-        if: ${{ false }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DELAY_SECONDS: ${{ github.event.inputs.delay_seconds || '300' }}
-        run: |
-          echo "sleep ${DELAY_SECONDS}s before dispatching next run"
-          sleep "${DELAY_SECONDS}"
-          curl -sS -X POST \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/tapmc-daily.yml/dispatches" \
-            -d '{"ref":"main"}'
+      - name: 執行同步
+        run: python fetch_tapmc_to_sheet.py
