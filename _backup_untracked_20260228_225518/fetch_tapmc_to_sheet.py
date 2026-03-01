@@ -13,8 +13,6 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from gspread.exceptions import WorksheetNotFound
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 REQUIRED_FIELDS = {
     "code": ["品名代號", "代號"],
@@ -58,20 +56,7 @@ def fetch_query_result_html(url: str, date_roc: str, category: str, fv_code: str
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
-    retry = Retry(
-        total=4,
-        connect=4,
-        read=4,
-        backoff_factor=1.0,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=frozenset(["GET", "POST"]),
-        raise_on_status=False,
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-
     with requests.Session() as session:
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
         resp = session.get(url, headers=headers, timeout=30)
         resp.raise_for_status()
         if not resp.encoding:
@@ -233,22 +218,7 @@ def get_client(service_account_json_path: str, service_account_json_content: str
 
 
 def load_item_codes(sheet, worksheet_name: str, item_column: int):
-    candidates = [worksheet_name]
-    for alt in ["item", "品項", "Item", "ITEM", "items", "Items", "代號", "清單"]:
-        if alt.lower() != worksheet_name.lower():
-            candidates.append(alt)
-
-    ws = None
-    for name in candidates:
-        try:
-            ws = sheet.worksheet(name)
-            if name != worksheet_name:
-                print(f'Using item worksheet "{ws.title}" (fallback from "{worksheet_name}")')
-            break
-        except WorksheetNotFound:
-            continue
-    if ws is None:
-        raise WorksheetNotFound(worksheet_name)
+    ws = sheet.worksheet(worksheet_name)
     values = ws.col_values(item_column)
 
     codes = []
@@ -292,31 +262,8 @@ def append_rows_by_worksheet(sheet, rows_by_worksheet):
         if not rows:
             continue
         ws = get_or_create_item_worksheet(sheet, title)
-
-        # De-duplicate by (date, code) against existing sheet rows and within this batch.
-        existing = set()
-        values = ws.get_all_values()
-        for r in values[1:]:
-            d = (r[0].strip() if len(r) > 0 else "")
-            c = (r[1].strip().upper() if len(r) > 1 else "")
-            if d and c:
-                existing.add((d, c))
-
-        deduped = []
-        for row in rows:
-            d = (str(row[0]).strip() if len(row) > 0 else "")
-            c = (str(row[1]).strip().upper() if len(row) > 1 else "")
-            if d and c and (d, c) in existing:
-                continue
-            if d and c:
-                existing.add((d, c))
-            deduped.append(row)
-
-        if not deduped:
-            continue
-
-        ws.append_rows(deduped, value_input_option="USER_ENTERED")
-        updated[title] = len(deduped)
+        ws.append_rows(rows, value_input_option="USER_ENTERED")
+        updated[title] = len(rows)
     return updated
 
 
@@ -452,12 +399,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        msg = str(exc).strip() or repr(exc)
-        print(
-            json.dumps(
-                {"ok": False, "error": msg, "error_type": exc.__class__.__name__},
-                ensure_ascii=False,
-            ),
-            file=sys.stderr,
-        )
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
