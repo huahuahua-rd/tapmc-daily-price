@@ -2,8 +2,8 @@ name: 每二六更新的品項價格
 
 on:
   schedule:
-    # UTC 01:00 = Asia/Taipei 09:00 (Tue, Sat)
-    - cron: "0 1 * * 2,6"
+    # UTC 01:00 = Asia/Taipei 09:00 (Daily)
+    - cron: "0 1 * * *"
   workflow_dispatch:
 
 jobs:
