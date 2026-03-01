@@ -1,18 +1,18 @@
-name: 每日行情更新
+name: 二六更新行情
 
 on:
   schedule:
-    # UTC 01:00 = Asia/Taipei 09:00 (Daily)
-    - cron: "0 1 * * *"
+    # UTC 01:00 = Asia/Taipei 09:00 (Tue, Sat)
+    - cron: "0 1 * * 2,6"
   workflow_dispatch:
 
 jobs:
   run:
-    name: 更新品項價格（每日）
+    name: 更新品項價格（二六）
     runs-on: ubuntu-latest
     env:
       SOURCE_URL: https://www.tapmc.com.tw/Pages/Trans/Price1
-      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID_DAILY }}
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID_TUE_SAT }}
       GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
       ITEM_WORKSHEET_NAME: item
       PRICE_WORKSHEET_NAME: 價格

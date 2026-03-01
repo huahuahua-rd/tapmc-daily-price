@@ -67,19 +67,23 @@ crontab -e
 ## 6) 雲端版（GitHub Actions，不用開著 Mac）
 
 專案已包含 workflow：
-- [.github/workflows/tapmc-daily.yml](/Users/hushiyu/Documents/北農/.github/workflows/tapmc-daily.yml)
+- 每日：`.github/workflows/tapmc-daily.yml`
+- 二六：`.github/workflows/tapmc-tue-sat.yml`
 
-執行時間是台灣時間每週二、週六 09:00（UTC `01:00`）。
+執行時間：
+- 每日：台灣時間每天 09:00（UTC `01:00`）
+- 二六：台灣時間每週二、週六 09:00（UTC `01:00`）
 
-在 GitHub Repo 設定這兩個 Secrets：
-- `GOOGLE_SHEET_ID`: 你的試算表 ID
+在 GitHub Repo 設定這三個 Secrets：
+- `GOOGLE_SHEET_ID_DAILY`: 每日用試算表 ID
+- `GOOGLE_SHEET_ID_TUE_SAT`: 二六用試算表 ID
 - `GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT`: Service Account 整份 JSON 內容（整段貼上）
 
 設定路徑：`Repo -> Settings -> Secrets and variables -> Actions -> New repository secret`
 
 完成後：
 1. 把目前資料夾 push 到 GitHub repository
-2. 到 `Actions` 頁籤手動執行一次 `每二六更新的品項價格`（`Run workflow`）
+2. 到 `Actions` 頁籤手動執行一次 `每日行情更新` 或 `二六更新行情`（`Run workflow`）
 3. 確認各品名分頁（`品名代號 品名`）有新增資料
 
 ## 7) AMIS 區間品項上價平均（蔬菜/水果）
