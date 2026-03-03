@@ -20,7 +20,7 @@ jobs:
       TIMEZONE: Asia/Taipei
       QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
       QUERY_DATE_ROC: ""
-      MAX_BACKTRACK_DAYS: "10"
+      MAX_BACKTRACK_DAYS: "60"
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4
