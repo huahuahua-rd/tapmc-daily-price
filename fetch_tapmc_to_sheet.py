@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import os
 import re
 import sys
@@ -40,6 +41,8 @@ def parse_number(value: object):
         return None
     if isinstance(value, (int, float)):
         n = float(value)
+        if not math.isfinite(n):
+            return None
         return int(n) if n.is_integer() else n
 
     text = str(value).strip()
