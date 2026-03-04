@@ -237,6 +237,10 @@ def get_client(service_account_json_path: str, service_account_json_content: str
 
 def load_item_codes_from_ws(ws, item_column: int):
     values = ws.col_values(item_column)
+    return load_item_codes_from_values(values)
+
+
+def load_item_codes_from_values(values):
     codes = []
     for i, v in enumerate(values):
         code = normalize_text(v).upper()
@@ -246,6 +250,29 @@ def load_item_codes_from_ws(ws, item_column: int):
             continue
         codes.append(code)
     return codes
+
+
+def col_index_to_letter(index: int) -> str:
+    if index < 1:
+        raise ValueError("column index must be >= 1")
+    letters = []
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        letters.append(chr(65 + remainder))
+    return "".join(reversed(letters))
+
+
+def load_item_codes_multi(ws, columns):
+    if not columns:
+        return {}
+    max_col = max(columns)
+    max_letter = col_index_to_letter(max_col)
+    rows = ws.get(f"A:{max_letter}")
+    codes_by_col = {}
+    for col in columns:
+        values = [row[col - 1] if len(row) >= col else "" for row in rows]
+        codes_by_col[col] = load_item_codes_from_values(values)
+    return codes_by_col
 
 
 def load_item_codes(sheet, worksheet_name: str, item_column: int):
@@ -378,6 +405,11 @@ def main():
     sh = gc.open_by_key(sheet_id)
 
     ws_item, target_codes = load_item_codes(sh, item_worksheet_name, item_column)
+    codes_by_col = None
+    if auto_item_column and item_column_candidates:
+        codes_by_col = load_item_codes_multi(ws_item, item_column_candidates)
+        if item_column in codes_by_col and codes_by_col[item_column]:
+            target_codes = codes_by_col[item_column]
     if not target_codes:
         raise ValueError(f"{item_worksheet_name} 分頁第 {item_column} 欄沒有可用代號")
 
@@ -441,7 +473,11 @@ def main():
             best_match = 0
             best_codes = None
             for col in item_column_candidates:
-                codes = load_item_codes_from_ws(ws_item, col)
+                codes = None
+                if codes_by_col and col in codes_by_col:
+                    codes = codes_by_col[col]
+                else:
+                    codes = load_item_codes_from_ws(ws_item, col)
                 if not codes:
                     continue
                 matches = sum(1 for c in codes if c in all_records)
