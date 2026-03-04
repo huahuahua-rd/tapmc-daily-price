@@ -15,12 +15,16 @@ jobs:
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID_DAILY }}
       GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
       ITEM_WORKSHEET_NAME: item
+      ITEM_TAB_COLUMN: "3"
+      ITEM_CODE_COLUMN: "4"
+      ITEM_ENABLE_COLUMN: "1"
       PRICE_WORKSHEET_NAME: 價格
       ITEM_COLUMN: "1"
       TIMEZONE: Asia/Taipei
       QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
       QUERY_DATE_ROC: ""
       MAX_BACKTRACK_DAYS: "60"
+      REQUIRE_EXISTING_TABS: "true"
       DATE_FORMAT: "ROC"
     steps:
       - name: 取得程式碼
@@ -35,4 +39,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: 執行同步
-        run: python
+        run: python fetch_tapmc_to_sheet.py

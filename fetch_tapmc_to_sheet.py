@@ -253,6 +253,29 @@ def load_item_codes_from_values(values):
     return codes
 
 
+def load_item_meta_from_ws(ws, tab_col: int, code_col: int, enable_col: int):
+    max_col = max(tab_col, code_col, enable_col)
+    max_letter = col_index_to_letter(max_col)
+    rows = ws.get(f"A:{max_letter}")
+    meta = []
+    for i, row in enumerate(rows):
+        if not row:
+            continue
+        enable = row[enable_col - 1] if len(row) >= enable_col else ""
+        tab_name = row[tab_col - 1] if len(row) >= tab_col else ""
+        code = row[code_col - 1] if len(row) >= code_col else ""
+        if i == 0 and normalize_text(code).upper() in {"品名代號", "ITEM", "CODE", "品項", "ITEMCODE"}:
+            continue
+        if normalize_text(enable).upper() not in {"Y", "YES", "TRUE", "1"}:
+            continue
+        code = normalize_text(code).upper()
+        tab_name = str(tab_name).strip()
+        if not code or not tab_name:
+            continue
+        meta.append({"code": code, "tab": tab_name})
+    return meta
+
+
 def col_index_to_letter(index: int) -> str:
     if index < 1:
         raise ValueError("column index must be >= 1")
@@ -323,10 +346,12 @@ def worksheet_title_for_record(record) -> str:
     return sanitize_worksheet_title(f'{record["code"]} {record["name"]}')
 
 
-def get_or_create_item_worksheet(sheet, title: str):
+def get_or_create_item_worksheet(sheet, title: str, require_existing: bool):
     try:
         return sheet.worksheet(title)
     except WorksheetNotFound:
+        if require_existing:
+            return None
         ws = sheet.add_worksheet(title=title, rows=2000, cols=7)
         ws.append_row(
             ["日期", "品名代號", "品名", "品種", "上價", "中價", "下價"],
@@ -335,7 +360,7 @@ def get_or_create_item_worksheet(sheet, title: str):
         return ws
 
 
-def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False):
+def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False, require_existing: bool = False):
     existing_worksheets = {ws.title: ws for ws in sheet.worksheets()}
     updated = {}
     for title, rows in rows_by_worksheet.items():
@@ -343,6 +368,9 @@ def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False)
             continue
         ws = existing_worksheets.get(title)
         if ws is None:
+            if require_existing:
+                print(f"Skip missing worksheet: {title}")
+                continue
             ws = call_with_retry(
                 lambda: sheet.add_worksheet(title=title, rows=2000, cols=7),
                 label=f"add_worksheet {title}",
@@ -405,6 +433,9 @@ def main():
 
     item_worksheet_name = os.getenv("ITEM_WORKSHEET_NAME", "item")
     item_column = int(os.getenv("ITEM_COLUMN", "1"))
+    item_tab_column = int(os.getenv("ITEM_TAB_COLUMN", "3"))
+    item_code_column = int(os.getenv("ITEM_CODE_COLUMN", "4"))
+    item_enable_column = int(os.getenv("ITEM_ENABLE_COLUMN", "1"))
 
     query_combos_raw = os.getenv(
         "QUERY_COMBOS",
@@ -414,6 +445,7 @@ def main():
     max_backtrack_days = int(os.getenv("MAX_BACKTRACK_DAYS", "10"))
     auto_item_column = (os.getenv("AUTO_ITEM_COLUMN", "").strip().lower() in {"1", "true", "yes"})
     skip_dedup = (os.getenv("SKIP_DEDUP", "").strip().lower() in {"1", "true", "yes"})
+    require_existing_tabs = (os.getenv("REQUIRE_EXISTING_TABS", "").strip().lower() in {"1", "true", "yes"})
     date_format = (os.getenv("DATE_FORMAT", "ROC") or "ROC").strip().upper()
     item_column_candidates_raw = os.getenv("ITEM_COLUMN_CANDIDATES", "1,2,3,4,5")
     item_column_candidates = []
@@ -453,6 +485,8 @@ def main():
             target_codes = codes_by_col[item_column]
     if not target_codes:
         raise ValueError(f"{item_worksheet_name} 分頁第 {item_column} 欄沒有可用代號")
+    item_meta = load_item_meta_from_ws(ws_item, item_tab_column, item_code_column, item_enable_column)
+    code_to_tab = {m["code"]: m["tab"] for m in item_meta}
 
     combos = parse_query_combos(query_combos_raw)
     last_html = ""
@@ -477,7 +511,7 @@ def main():
                 candidate_missing.append(code)
                 continue
 
-            sheet_title = worksheet_title_for_record(rec)
+            sheet_title = code_to_tab.get(code, worksheet_title_for_record(rec))
             row = [
                 row_date_str,
                 rec["code"],
@@ -559,7 +593,12 @@ def main():
             f"在最近 {max_backtrack_days} 天內都找不到可用資料 (已儲存 {debug_path})"
         )
 
-    updated_worksheets = append_rows_by_worksheet(sh, rows_to_append_by_sheet, skip_dedup=skip_dedup)
+    updated_worksheets = append_rows_by_worksheet(
+        sh,
+        rows_to_append_by_sheet,
+        skip_dedup=skip_dedup,
+        require_existing=require_existing_tabs,
+    )
     appended_rows = sum(updated_worksheets.values())
 
     print(

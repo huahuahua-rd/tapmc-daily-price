@@ -15,6 +15,9 @@ jobs:
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID_TUE_SAT }}
       GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}
       ITEM_WORKSHEET_NAME: item
+      ITEM_TAB_COLUMN: "3"
+      ITEM_CODE_COLUMN: "4"
+      ITEM_ENABLE_COLUMN: "1"
       PRICE_WORKSHEET_NAME: 價格
       ITEM_COLUMN: "1"
       TIMEZONE: Asia/Taipei
@@ -25,6 +28,7 @@ jobs:
       AUTO_ITEM_COLUMN: "true"
       ITEM_COLUMN_CANDIDATES: "1,2,3,4,5"
       DATE_FORMAT: "ROC"
+      REQUIRE_EXISTING_TABS: "true"
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4
