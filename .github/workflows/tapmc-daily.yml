@@ -21,6 +21,7 @@ jobs:
       QUERY_COMBOS: 1:V:1,1:F:1,2:V:1,2:V:2,2:F:1,2:F:2
       QUERY_DATE_ROC: ""
       MAX_BACKTRACK_DAYS: "60"
+      DATE_FORMAT: "ROC"
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4
@@ -34,4 +35,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: 執行同步
-        run: python fetch_tapmc_to_sheet.py
+        run: python
