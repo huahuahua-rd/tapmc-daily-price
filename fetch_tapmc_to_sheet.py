@@ -319,12 +319,25 @@ def get_or_create_item_worksheet(sheet, title: str):
         return ws
 
 
-def append_rows_by_worksheet(sheet, rows_by_worksheet):
+def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False):
+    existing_worksheets = {ws.title: ws for ws in sheet.worksheets()}
     updated = {}
     for title, rows in rows_by_worksheet.items():
         if not rows:
             continue
-        ws = get_or_create_item_worksheet(sheet, title)
+        ws = existing_worksheets.get(title)
+        if ws is None:
+            ws = sheet.add_worksheet(title=title, rows=2000, cols=7)
+            ws.append_row(
+                ["日期", "品名代號", "品名", "品種", "上價", "中價", "下價"],
+                value_input_option="USER_ENTERED",
+            )
+            existing_worksheets[title] = ws
+
+        if skip_dedup:
+            ws.append_rows(rows, value_input_option="USER_ENTERED")
+            updated[title] = len(rows)
+            continue
 
         # De-duplicate by (date, code) against existing sheet rows and within this batch.
         existing = set()
@@ -372,6 +385,7 @@ def main():
     query_date_roc_override = (os.getenv("QUERY_DATE_ROC") or "").strip()
     max_backtrack_days = int(os.getenv("MAX_BACKTRACK_DAYS", "10"))
     auto_item_column = (os.getenv("AUTO_ITEM_COLUMN", "").strip().lower() in {"1", "true", "yes"})
+    skip_dedup = (os.getenv("SKIP_DEDUP", "").strip().lower() in {"1", "true", "yes"})
     item_column_candidates_raw = os.getenv("ITEM_COLUMN_CANDIDATES", "1,2,3,4,5")
     item_column_candidates = []
     for part in item_column_candidates_raw.split(","):
@@ -510,7 +524,7 @@ def main():
             f"在最近 {max_backtrack_days} 天內都找不到可用資料 (已儲存 {debug_path})"
         )
 
-    updated_worksheets = append_rows_by_worksheet(sh, rows_to_append_by_sheet)
+    updated_worksheets = append_rows_by_worksheet(sh, rows_to_append_by_sheet, skip_dedup=skip_dedup)
     appended_rows = sum(updated_worksheets.values())
 
     print(

@@ -24,6 +24,7 @@ jobs:
       ALLOW_NO_DATA: "true"
       AUTO_ITEM_COLUMN: "true"
       ITEM_COLUMN_CANDIDATES: "1,2,3,4,5"
+      SKIP_DEDUP: "true"
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4
