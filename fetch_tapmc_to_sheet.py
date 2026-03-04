@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import math
+import time
 import os
 import re
 import sys
@@ -13,7 +14,7 @@ import pytz
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from gspread.exceptions import WorksheetNotFound
+from gspread.exceptions import APIError, WorksheetNotFound
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -275,6 +276,21 @@ def load_item_codes_multi(ws, columns):
     return codes_by_col
 
 
+def call_with_retry(fn, *, label: str, max_retries: int = 5, base_sleep: float = 10.0):
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except APIError as exc:
+            message = str(exc)
+            if "Quota exceeded" not in message and "429" not in message:
+                raise
+            if attempt >= max_retries:
+                raise
+            sleep_s = base_sleep * (2 ** attempt)
+            print(f"{label} quota exceeded, retrying in {sleep_s:.0f}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(sleep_s)
+
+
 def load_item_codes(sheet, worksheet_name: str, item_column: int):
     candidates = [worksheet_name]
     for alt in ["item", "品項", "Item", "ITEM", "items", "Items", "代號", "清單"]:
@@ -327,15 +343,24 @@ def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False)
             continue
         ws = existing_worksheets.get(title)
         if ws is None:
-            ws = sheet.add_worksheet(title=title, rows=2000, cols=7)
-            ws.append_row(
-                ["日期", "品名代號", "品名", "品種", "上價", "中價", "下價"],
-                value_input_option="USER_ENTERED",
+            ws = call_with_retry(
+                lambda: sheet.add_worksheet(title=title, rows=2000, cols=7),
+                label=f"add_worksheet {title}",
+            )
+            call_with_retry(
+                lambda: ws.append_row(
+                    ["日期", "品名代號", "品名", "品種", "上價", "中價", "下價"],
+                    value_input_option="USER_ENTERED",
+                ),
+                label=f"append_header {title}",
             )
             existing_worksheets[title] = ws
 
         if skip_dedup:
-            ws.append_rows(rows, value_input_option="USER_ENTERED")
+            call_with_retry(
+                lambda: ws.append_rows(rows, value_input_option="USER_ENTERED"),
+                label=f"append_rows {title}",
+            )
             updated[title] = len(rows)
             continue
 
@@ -361,7 +386,10 @@ def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False)
         if not deduped:
             continue
 
-        ws.append_rows(deduped, value_input_option="USER_ENTERED")
+        call_with_retry(
+            lambda: ws.append_rows(deduped, value_input_option="USER_ENTERED"),
+            label=f"append_rows {title}",
+        )
         updated[title] = len(deduped)
     return updated
 
