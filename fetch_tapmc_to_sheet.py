@@ -370,6 +370,7 @@ def main():
     missing_codes = []
     used_query_date_roc = None
     backtracked_days = 0
+    saw_any_records = False
 
     for days_back in range(max_backtrack_days + 1):
         query_date = start_date - timedelta(days=days_back)
@@ -392,6 +393,7 @@ def main():
 
         if not all_records:
             continue
+        saw_any_records = True
 
         candidate_rows_by_sheet = {}
         candidate_missing_codes = []
@@ -424,6 +426,10 @@ def main():
         debug_path = os.path.abspath("debug_tapmc_response.html")
         with open(debug_path, "w", encoding="utf-8") as f:
             f.write(last_html)
+        if saw_any_records:
+            raise ValueError(
+                f"有查到資料，但在最近 {max_backtrack_days} 天內沒有符合的品項代號 (已儲存 {debug_path})"
+            )
         raise ValueError(
             f"在最近 {max_backtrack_days} 天內都找不到可用資料 (已儲存 {debug_path})"
         )
@@ -453,6 +459,17 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         msg = str(exc).strip() or repr(exc)
+        allow_no_data = (os.getenv("ALLOW_NO_DATA", "").strip().lower() in {"1", "true", "yes"})
+        if allow_no_data and isinstance(exc, ValueError) and (
+            "找不到可用資料" in msg or "沒有符合的品項代號" in msg
+        ):
+            print(
+                json.dumps(
+                    {"ok": False, "skipped": True, "error": msg, "error_type": exc.__class__.__name__},
+                    ensure_ascii=False,
+                )
+            )
+            sys.exit(0)
         print(
             json.dumps(
                 {"ok": False, "error": msg, "error_type": exc.__class__.__name__},
