@@ -22,6 +22,8 @@ jobs:
       QUERY_DATE_ROC: ""
       MAX_BACKTRACK_DAYS: "60"
       ALLOW_NO_DATA: "true"
+      AUTO_ITEM_COLUMN: "true"
+      ITEM_COLUMN_CANDIDATES: "1,2,3,4,5"
     steps:
       - name: 取得程式碼
         uses: actions/checkout@v4

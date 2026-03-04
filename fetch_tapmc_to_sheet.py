@@ -232,6 +232,19 @@ def get_client(service_account_json_path: str, service_account_json_content: str
     return gspread.service_account(filename=service_account_json_path)
 
 
+def load_item_codes_from_ws(ws, item_column: int):
+    values = ws.col_values(item_column)
+    codes = []
+    for i, v in enumerate(values):
+        code = normalize_text(v).upper()
+        if not code:
+            continue
+        if i == 0 and code in {"品名代號", "ITEM", "CODE", "品項", "ITEMCODE"}:
+            continue
+        codes.append(code)
+    return codes
+
+
 def load_item_codes(sheet, worksheet_name: str, item_column: int):
     candidates = [worksheet_name]
     for alt in ["item", "品項", "Item", "ITEM", "items", "Items", "代號", "清單"]:
@@ -249,17 +262,7 @@ def load_item_codes(sheet, worksheet_name: str, item_column: int):
             continue
     if ws is None:
         raise WorksheetNotFound(worksheet_name)
-    values = ws.col_values(item_column)
-
-    codes = []
-    for i, v in enumerate(values):
-        code = normalize_text(v).upper()
-        if not code:
-            continue
-        if i == 0 and code in {"品名代號", "ITEM", "CODE", "品項", "ITEMCODE"}:
-            continue
-        codes.append(code)
-    return codes
+    return ws, load_item_codes_from_ws(ws, item_column)
 
 
 def sanitize_worksheet_title(text: str) -> str:
@@ -338,6 +341,17 @@ def main():
     )
     query_date_roc_override = (os.getenv("QUERY_DATE_ROC") or "").strip()
     max_backtrack_days = int(os.getenv("MAX_BACKTRACK_DAYS", "10"))
+    auto_item_column = (os.getenv("AUTO_ITEM_COLUMN", "").strip().lower() in {"1", "true", "yes"})
+    item_column_candidates_raw = os.getenv("ITEM_COLUMN_CANDIDATES", "1,2,3,4,5")
+    item_column_candidates = []
+    for part in item_column_candidates_raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            item_column_candidates.append(int(part))
+        except ValueError:
+            continue
 
     missing = []
     if not service_account_json and not service_account_json_content:
@@ -360,7 +374,7 @@ def main():
     gc = get_client(service_account_json, service_account_json_content)
     sh = gc.open_by_key(sheet_id)
 
-    target_codes = load_item_codes(sh, item_worksheet_name, item_column)
+    ws_item, target_codes = load_item_codes(sh, item_worksheet_name, item_column)
     if not target_codes:
         raise ValueError(f"{item_worksheet_name} 分頁第 {item_column} 欄沒有可用代號")
 
@@ -371,6 +385,28 @@ def main():
     used_query_date_roc = None
     backtracked_days = 0
     saw_any_records = False
+
+    def build_rows(codes, records):
+        candidate_rows_by_sheet = {}
+        candidate_missing = []
+        for code in codes:
+            rec = records.get(code)
+            if not rec:
+                candidate_missing.append(code)
+                continue
+
+            sheet_title = worksheet_title_for_record(rec)
+            row = [
+                target_date_str,
+                rec["code"],
+                rec["name"],
+                rec["variety"],
+                rec["high"],
+                rec["mid"],
+                rec["low"],
+            ]
+            candidate_rows_by_sheet.setdefault(sheet_title, []).append(row)
+        return candidate_rows_by_sheet, candidate_missing
 
     for days_back in range(max_backtrack_days + 1):
         query_date = start_date - timedelta(days=days_back)
@@ -395,25 +431,26 @@ def main():
             continue
         saw_any_records = True
 
-        candidate_rows_by_sheet = {}
-        candidate_missing_codes = []
-        for code in target_codes:
-            rec = all_records.get(code)
-            if not rec:
-                candidate_missing_codes.append(code)
-                continue
+        candidate_rows_by_sheet, candidate_missing_codes = build_rows(target_codes, all_records)
 
-            sheet_title = worksheet_title_for_record(rec)
-            row = [
-                target_date_str,
-                rec["code"],
-                rec["name"],
-                rec["variety"],
-                rec["high"],
-                rec["mid"],
-                rec["low"],
-            ]
-            candidate_rows_by_sheet.setdefault(sheet_title, []).append(row)
+        if auto_item_column and not candidate_rows_by_sheet and item_column_candidates:
+            best_col = None
+            best_match = 0
+            best_codes = None
+            for col in item_column_candidates:
+                codes = load_item_codes_from_ws(ws_item, col)
+                if not codes:
+                    continue
+                matches = sum(1 for c in codes if c in all_records)
+                if matches > best_match:
+                    best_match = matches
+                    best_col = col
+                    best_codes = codes
+            if best_col and best_match > 0:
+                print(f"Auto item column selected: {best_col} (matches {best_match})")
+                item_column = best_col
+                target_codes = best_codes
+                candidate_rows_by_sheet, candidate_missing_codes = build_rows(target_codes, all_records)
 
         if candidate_rows_by_sheet:
             rows_to_append_by_sheet = candidate_rows_by_sheet
