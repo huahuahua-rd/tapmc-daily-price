@@ -366,7 +366,7 @@ def append_rows_by_worksheet(sheet, rows_by_worksheet, skip_dedup: bool = False)
 
         # De-duplicate by (date, code) against existing sheet rows and within this batch.
         existing = set()
-        values = ws.get_all_values()
+        values = call_with_retry(lambda: ws.get("A:B"), label=f"get_ab {title}")
         for r in values[1:]:
             d = (r[0].strip() if len(r) > 0 else "")
             c = (r[1].strip().upper() if len(r) > 1 else "")
@@ -449,4 +449,157 @@ def main():
     codes_by_col = None
     if auto_item_column and item_column_candidates:
         codes_by_col = load_item_codes_multi(ws_item, item_column_candidates)
-        if item_column in codes_by_col and codes
+        if item_column in codes_by_col and codes_by_col[item_column]:
+            target_codes = codes_by_col[item_column]
+    if not target_codes:
+        raise ValueError(f"{item_worksheet_name} 分頁第 {item_column} 欄沒有可用代號")
+
+    combos = parse_query_combos(query_combos_raw)
+    last_html = ""
+    rows_to_append_by_sheet = {}
+    missing_codes = []
+    used_query_date_roc = None
+    used_query_date = None
+    backtracked_days = 0
+    saw_any_records = False
+
+    def format_row_date(dt):
+        if date_format == "ROC":
+            return roc_date_from_gregorian(dt)
+        return dt.strftime("%Y-%m-%d")
+
+    def build_rows(codes, records, row_date_str):
+        candidate_rows_by_sheet = {}
+        candidate_missing = []
+        for code in codes:
+            rec = records.get(code)
+            if not rec:
+                candidate_missing.append(code)
+                continue
+
+            sheet_title = worksheet_title_for_record(rec)
+            row = [
+                row_date_str,
+                rec["code"],
+                rec["name"],
+                rec["variety"],
+                rec["high"],
+                rec["mid"],
+                rec["low"],
+            ]
+            candidate_rows_by_sheet.setdefault(sheet_title, []).append(row)
+        return candidate_rows_by_sheet, candidate_missing
+
+    for days_back in range(max_backtrack_days + 1):
+        query_date = start_date - timedelta(days=days_back)
+        query_date_roc = roc_date_from_gregorian(query_date)
+        all_records = {}
+
+        for category, fv_code, market in combos:
+            html = fetch_query_result_html(
+                source_url,
+                date_roc=query_date_roc,
+                category=category,
+                fv_code=fv_code,
+                market=market,
+            )
+            last_html = html
+            records = extract_records_from_html(html)
+            for code, rec in records.items():
+                if code not in all_records:
+                    all_records[code] = rec
+
+        if not all_records:
+            continue
+        saw_any_records = True
+
+        row_date_str = format_row_date(query_date)
+        candidate_rows_by_sheet, candidate_missing_codes = build_rows(target_codes, all_records, row_date_str)
+
+        if auto_item_column and not candidate_rows_by_sheet and item_column_candidates:
+            best_col = None
+            best_match = 0
+            best_codes = None
+            for col in item_column_candidates:
+                codes = None
+                if codes_by_col and col in codes_by_col:
+                    codes = codes_by_col[col]
+                else:
+                    codes = load_item_codes_from_ws(ws_item, col)
+                if not codes:
+                    continue
+                matches = sum(1 for c in codes if c in all_records)
+                if matches > best_match:
+                    best_match = matches
+                    best_col = col
+                    best_codes = codes
+            if best_col and best_match > 0:
+                print(f"Auto item column selected: {best_col} (matches {best_match})")
+                item_column = best_col
+                target_codes = best_codes
+                candidate_rows_by_sheet, candidate_missing_codes = build_rows(target_codes, all_records, row_date_str)
+
+        if candidate_rows_by_sheet:
+            rows_to_append_by_sheet = candidate_rows_by_sheet
+            missing_codes = candidate_missing_codes
+            used_query_date_roc = query_date_roc
+            used_query_date = query_date
+            backtracked_days = days_back
+            break
+
+    if not rows_to_append_by_sheet:
+        debug_path = os.path.abspath("debug_tapmc_response.html")
+        with open(debug_path, "w", encoding="utf-8") as f:
+            f.write(last_html)
+        if saw_any_records:
+            raise ValueError(
+                f"有查到資料，但在最近 {max_backtrack_days} 天內沒有符合的品項代號 (已儲存 {debug_path})"
+            )
+        raise ValueError(
+            f"在最近 {max_backtrack_days} 天內都找不到可用資料 (已儲存 {debug_path})"
+        )
+
+    updated_worksheets = append_rows_by_worksheet(sh, rows_to_append_by_sheet, skip_dedup=skip_dedup)
+    appended_rows = sum(updated_worksheets.values())
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "date": format_row_date(used_query_date or start_date),
+                "used_query_date_roc": used_query_date_roc,
+                "backtracked_days": backtracked_days,
+                "item_codes": len(target_codes),
+                "appended": appended_rows,
+                "missing_codes": missing_codes,
+                "updated_worksheets": updated_worksheets,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        msg = str(exc).strip() or repr(exc)
+        allow_no_data = (os.getenv("ALLOW_NO_DATA", "").strip().lower() in {"1", "true", "yes"})
+        if allow_no_data and isinstance(exc, ValueError) and (
+            "找不到可用資料" in msg or "沒有符合的品項代號" in msg
+        ):
+            print(
+                json.dumps(
+                    {"ok": False, "skipped": True, "error": msg, "error_type": exc.__class__.__name__},
+                    ensure_ascii=False,
+                )
+            )
+            sys.exit(0)
+        print(
+            json.dumps(
+                {"ok": False, "error": msg, "error_type": exc.__class__.__name__},
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)

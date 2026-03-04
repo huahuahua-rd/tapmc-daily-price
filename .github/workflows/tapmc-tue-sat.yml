@@ -24,7 +24,6 @@ jobs:
       ALLOW_NO_DATA: "true"
       AUTO_ITEM_COLUMN: "true"
       ITEM_COLUMN_CANDIDATES: "1,2,3,4,5"
-      SKIP_DEDUP: "true"
       DATE_FORMAT: "ROC"
     steps:
       - name: 取得程式碼
@@ -33,4 +32,10 @@ jobs:
       - name: 安裝 Python
         uses: actions/setup-python@v5
         with:
-          python-version: "
+          python-version: "3.11"
+
+      - name: 安裝依賴
+        run: pip install -r requirements.txt
+
+      - name: 執行同步
+        run: python fetch_tapmc_to_sheet.py
